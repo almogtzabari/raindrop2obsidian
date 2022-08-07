@@ -63,6 +63,7 @@ def sync_raindrop(raindrop, md_filename: str) -> None:
                         note_last_update = line.split(":: ")[-1].strip()
                         line = line.replace(note_last_update, raindrop.last_update)
                     f_temp.write(line)
+        os.replace(temp_file, original_file)
                
     with open(md_filename, 'a', encoding='utf-8') as f:
         for highlight in raindrop.highlights:
