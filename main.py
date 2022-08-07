@@ -33,7 +33,6 @@ def wait(total_time_in_sec, report_every_in_sec: int=5):
 def sync_raindrop(raindrop, md_filename: str) -> None:
     note_last_update = None
     if not os.path.isfile(md_filename):
-        # File does not exist - create a new file with frontmatter
         note_last_update = '2000-01-01T00:00:00.000Z'
         with open(md_filename, "w", encoding="utf-8") as f:
             f.write("---\n")
@@ -71,15 +70,10 @@ def sync_raindrop(raindrop, md_filename: str) -> None:
                 # Highlight was already synced earlier
                 continue
 
-            # highlight_color_rgb = COLORS[highlight['color']]
             f.write(f"---\n")
-            # Write highlight metadata
             f.write(f"Created: {highlight.created}\n")
-
-            # Write highlight text
             f.write(f"> [!highlight-{highlight.color}]\n")
-            highlight_text_replaced = highlight.text.replace('\n', '\n> ')
-            f.write(f"> {highlight_text_replaced}\n\n")
+            f.write(f"> {highlight.text.replace('\n', '\n> ')}\n\n")
 
             # write highlight note
             if highlight.note != '':
