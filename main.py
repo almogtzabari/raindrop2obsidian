@@ -73,7 +73,8 @@ def sync_raindrop(raindrop, md_filename: str) -> None:
             f.write(f"---\n")
             f.write(f"Created: {highlight.created}\n")
             f.write(f"> [!highlight-{highlight.color}]\n")
-            f.write(f"> {highlight.text.replace('\n', '\n> ')}\n\n")
+            highlight_text = highlight.text.replace('\n', '\n> ')
+            f.write(f"> {highlight_text}\n\n")
 
             if highlight.note != '':
                 f.write(f"> [!note]\n")
