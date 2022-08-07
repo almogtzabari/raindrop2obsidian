@@ -37,21 +37,22 @@ def sync_raindrop(raindrop, md_filename: str) -> None:
         note_last_update = '2000-01-01T00:00:00.000Z'
         with open(md_filename, "w", encoding="utf-8") as f:
             f.write("---\n")
-            f.write(f"category: raindrop_article\n")
-            f.write(f"collection_id: {raindrop.collection['$id']}\n")
-            f.write(f"raindrop_id: {raindrop.id}\n")
             f.write(f'banner: "{raindrop.cover}"\n')
             f.write("---\n\n")
-            f.write(f"%%\nup:: [[+Highlights]]\n%% \n\n")
+            f.write(f"%%\n")
+            f.write(f"category:: raindrop_article\n")
+            f.write(f"up:: [[+Highlights]]\n")
+            f.write(f"%%\n\n")
             f.write(f"# {raindrop.title}\n")
             f.write(f"### Raindrop Metadata\n")
+            f.write(f"collection_id:: {raindrop.collection['$id']}\n")
+            f.write(f"raindrop_id:: {raindrop.id}\n")
             f.write(f"title:: {raindrop.title}\n")
             f.write(f"link:: [{raindrop.domain}]({raindrop.link})\n")
             f.write(f"tags:: {', '.join(raindrop.tags)}\n")
             f.write(f"created:: {raindrop.created}\n")
             f.write(f"last_update:: {raindrop.last_update}\n\n")
-            if len(raindrop.highlights) > 0:
-                f.write("### Highlights\n")
+            f.write("### Highlights\n")
 
     else:
         original_file = md_filename
