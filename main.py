@@ -1,61 +1,98 @@
-import time
-import requests
 import os
-import math
-import logging
+import argparse
+import yaml
+import time
+import concurrent.futures
+import datetime
+import pyraindropio
 
 
-LOGGER_BASE_NAME = "raindrop2obsidian"
-COLLECTIONS_TO_FETCH = ["24904767", "9569415"]
-TOEKN = "PUT RAINDROP TEST TOKEN HERE"
-BASE_API_URL = "https://api.raindrop.io/rest/v1"
-HEADERS = {'Authorization': f"Bearer {TOEKN}"}
-RAINDROPS_PER_PAGE = 50  # 50 is the max value - save API requests
-HIGHLIGHTS_DIR = os.path.realpath(r"PUT THE DIRECTORY TO SYNC INTO. NOTE: A SUBFOLDER WILL BE CREATED!")
-OBSIDIAN_HIGHLIGHTS_DIR = os.path.join(HIGHLIGHTS_DIR)
-COLORS = {
-    'blue': "0, 0, 255",
-    'brown': "165,42,42",
-    'cyan': "0, 255, 255",
-    'gray': "220,220,220",
-    'green': "0, 255, 0",
-    'indigo': "75, 0, 130",
-    'orange': "255, 165, 0",
-    'pink': "255, 192, 203",
-    'purple': "159, 43, 104",
-    'red': "255, 0, 0",
-    'teal': "0, 128, 128",
-    'yellow': "255,255,0",
-}
+MIN2SEC = 60
 
 
-def configure_logger():
-    import sys
-    logger = logging.getLogger(LOGGER_BASE_NAME)
-    logger.setLevel(logging.DEBUG)
+parser = argparse.ArgumentParser(
+    description='Raindrop.io highlights to Obsidian.md'
+)
 
-    stream_formatter = logging.Formatter('%(asctime)s - %(filename)s - %(levelname)s - %(message)s', "%Y-%m-%d %H:%M:%S")
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setLevel(logging.DEBUG)
-    stream_handler.setFormatter(stream_formatter)
-    logger.addHandler(stream_handler)
+parser.add_argument(
+    '-c', '--config-filename',
+    type=str,
+    default="config.yaml",
+    dest='config_filename',
+    help='Path to config file.'
+)
 
-    file_formatter = logging.Formatter('%(asctime)s - %(filename)s - %(levelname)s - %(message)s', "%Y-%m-%d %H:%M:%S")
-    file_handler = logging.FileHandler(filename="raindrop2obsidian.log")
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
 
-    return logger
+def wait(total_time_in_sec, report_every_in_sec: int=5):
+    for time_passed in range(0, total_time_in_sec, report_every_in_sec):
+        time_left_in_sec = total_time_in_sec - time_passed
+        print(f"Syncing again in {time_left_in_sec // 60:02}:{time_left_in_sec % 60:02} (MM:SS)", end='\r')
+        time.sleep(report_every_in_sec)
+    
 
-def get_logger(module_name: str):
-    """ module_name should be `__file__`."""
-    logger_name = f"{LOGGER_BASE_NAME}." + os.path.relpath(module_name).split('.py')[0].replace(os.sep, ".")
-    return logging.getLogger(logger_name)
+def sync_raindrop(raindrop, md_filename: str) -> None:
+    note_last_update = None
+    if not os.path.isfile(md_filename):
+        # File does not exist - create a new file with frontmatter
+        note_last_update = '2000-01-01T00:00:00.000Z'
+        with open(md_filename, "w", encoding="utf-8") as f:
+            f.write("---\n")
+            f.write(f"category: raindrop_article\n")
+            f.write(f"collection_id: {raindrop.collection['$id']}\n")
+            f.write(f"raindrop_id: {raindrop.id}\n")
+            f.write(f'banner: "{raindrop.cover}"\n')
+            f.write("---\n\n")
+            f.write(f"%%\nup:: [[+Highlights]]\n%% \n\n")
+            f.write(f"# {raindrop.title}\n")
+            f.write(f"### Raindrop Metadata\n")
+            f.write(f"title:: {raindrop.title}\n")
+            f.write(f"link:: [{raindrop.domain}]({raindrop.link})\n")
+            f.write(f"tags:: {', '.join(raindrop.tags)}\n")
+            f.write(f"created:: {raindrop.created}\n")
+            f.write(f"last_update:: {raindrop.last_update}\n\n")
+            if len(raindrop.highlights) > 0:
+                f.write("### Highlights\n")
+
+    else:
+        original_file = md_filename
+        temp_file = f"{md_filename}.temp"
+        with open(original_file, "r", encoding="utf-8") as f_orig:
+            with open(temp_file, 'w', encoding="utf-8") as f_temp:
+                for line in f_orig.readlines():
+                    if line.startswith('last_update::'):
+                        note_last_update = line.split(":: ")[-1].strip()
+                        line = line.replace(note_last_update, raindrop.last_update)
+                    f_temp.write(line)
+               
+    with open(md_filename, 'a', encoding='utf-8') as f:
+        for highlight in raindrop.highlights:
+            if date_time_to_int(highlight.created) <= date_time_to_int(note_last_update):
+                # Highlight was already synced earlier
+                continue
+
+            # highlight_color_rgb = COLORS[highlight['color']]
+            f.write(f"---\n")
+            # Write highlight metadata
+            f.write(f"Created: {highlight.created}\n")
+
+            # Write highlight text
+            f.write(f"> [!highlight-{highlight.color}]\n")
+            highlight_text_replaced = highlight.text.replace('\n', '\n> ')
+            f.write(f"> {highlight_text_replaced}\n\n")
+
+            # write highlight note
+            if highlight.note != '':
+                f.write(f"> [!note]\n")
+                f.write(f"> {highlight.note}\n\n")
+
+
+def find_valid_filename(orig, sep: str="-"):
+    ret = slugify(orig)
+    ret = sep.join(word.capitalize() for word in ret.split("-"))
+    return ret
 
 
 def date_time_to_int(date_time: str) -> int:
-    import datetime
     date_time_obj = datetime.datetime.fromisoformat(date_time[:-1])  # Remove last character 'z'
     return int(date_time_obj.strftime("%Y%m%d%H%M%S"))
 
@@ -70,127 +107,45 @@ def slugify(value, allow_unicode=False):
     """
     import unicodedata
     import re
+
     value = str(value)
     if allow_unicode:
-        value = unicodedata.normalize('NFKC', value)
+        value = unicodedata.normalize("NFKC", value)
     else:
-        value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
-    value = re.sub(r'[^\w\s-]', '', value.lower())
-    return re.sub(r'[-\s]+', '-', value).strip('-_')
-
-def get_collection_by_id(collection_id: int):
-    response = requests.get(
-        url=f"{BASE_API_URL}/collection/{collection_id}",
-        headers=HEADERS
-    )
-    data = response.json()
-    return data['item']
-
-def get_raindrops_by_collections(collections: list):
-    raindrops = []
-    for collection in collections:
-        for page_num in range(0, math.ceil(collection['count'] / RAINDROPS_PER_PAGE)):
-            response = requests.get(
-                url=f"{BASE_API_URL}/raindrops/{collection['_id']}",
-                headers=HEADERS,
-                params={
-                    'perpage': RAINDROPS_PER_PAGE,
-                    'page': page_num,
-                }
-            )
-            data = response.json()
-            raindrops.extend(data['items'])
-    return raindrops
+        value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    value = re.sub(r"[^\w\s-]", "", value.lower())
+    return re.sub(r"[-\s]+", "-", value).strip("-_")
 
 
-def create_obsidian_file_from_raindrop_article(raindrop, dir):
-    collection_id = raindrop['collectionId']
-    raindrop_title = raindrop['title']
-    raindrop_id = raindrop['_id']
-    raindrop_link = raindrop['link']
-    raindrop_link_domain = raindrop['domain']
-    raindrop_created = raindrop['created']
-    raindrop_last_update = raindrop['lastUpdate']
-    raindrop_media = raindrop['media']
-    raindrop_cover = raindrop['cover']
-    raindrop_highlights = raindrop['highlights']
-
-    md_filename = os.path.join(dir, slugify(raindrop_title)) + ".md"
-    if not os.path.isfile(md_filename):
-        # File does not exist - create a new file with frontmatter
-        with open(md_filename, 'w', encoding='utf-8') as f:
-            f.write("---\n")
-            f.write(f"category: raindrop_article\n")
-            f.write(f"collection_id: {collection_id}\n")
-            f.write(f"raindrop_id: {raindrop_id}\n")
-            f.write(f'banner: "{raindrop_cover}"\n')
-            f.write("---\n\n")
-            f.write(f"%%\nup:: [[+Highlights]]\n%% \n\n")
-            f.write(f"# {raindrop_title}\n")
-            f.write(f"### Raindrop Metadata\n")
-            f.write(f"title:: {raindrop_title}\n")
-            f.write(f"link:: [{raindrop_link_domain}]({raindrop_link})\n")
-            f.write(f"created:: {raindrop_created}\n\n")
-            if len(raindrop_highlights) > 0:
-                f.write("### Highlights\n")
-    
-            for highlight in raindrop_highlights:
-                highlight_id = highlight['_id']
-                highlight_created = highlight['created']
-                highlight_last_update = highlight['lastUpdate']
-                highlight_text = highlight['text']
-                highlight_note = highlight['note']
-                highlight_color_rgb = COLORS[highlight['color']]
-                f.write(f"---\n")
-                # Write highlight metadata
-                f.write(f"Created: {highlight_created}\n")
-                f.write(f"Last Updated: {highlight_last_update}\n")
-
-                # Write highlight text
-                f.write(f"```ad-quote\n")
-                f.write(f"color: {highlight_color_rgb}\n\n")
-                f.write(f"{highlight_text}\n")
-                f.write(f"```\n")
-
-                # write highlight note
-                f.write(f"```ad-note\n")
-                # f.write(f"color: {highlight_color_rgb}\n\n")
-                f.write(f"{highlight_note}\n")
-                f.write(f"```\n\n")
-
-
-def fetch_and_create_md_files():
-    # Fetch data from raindrop
-    collections = [get_collection_by_id(collection_id) for collection_id in COLLECTIONS_TO_FETCH]
-    raindrops = get_raindrops_by_collections(collections)
-
-    my_collection_metadata = {} 
-    for collection in collections:
-        collection_id = collection['_id']
-        collection_title = collection['title']
-        my_collection_dir = os.path.join(OBSIDIAN_HIGHLIGHTS_DIR, f"{collection_id} - {collection_title}")
-        os.makedirs(my_collection_dir, exist_ok=True)
-        my_collection_metadata[collection_id] = {
-            'obsidian_collection_dir': my_collection_dir,
-            'title': collection_title
-        }
-
-    for raindrop in filter(lambda raindrop: raindrop['type'] == 'article', raindrops):
-        create_obsidian_file_from_raindrop_article(raindrop, dir=my_collection_metadata[raindrop['collectionId']]['obsidian_collection_dir'])
-
-
-def main():
-    logger = get_logger(__file__)
-    total_wait = 5 * 60
-    print_every = 10  # Seconds
+def main(config):
+    os.makedirs(config['target_dir'], exist_ok=True)
+    access_token = config['access_token']
+    max_threads = config['max_threads']
+    session = pyraindropio.Session(access_token=access_token, max_threads=max_threads)
+    collections = [session.get_collection_by_id(collection_id) for collection_id in config['collections']]
     while True:
-        logger.info(f"Syncing new Raindrop articles")
-        fetch_and_create_md_files()
-        for i in range(0, total_wait, print_every):
-            logger.info(f"Fetching again in {(total_wait-i) // 60} minutes and {(total_wait-i)%60} seconds")
-            time.sleep(print_every)
+        print(f"Syncing, please wait...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+            for collection in collections:
+                for raindrop in collection.fetch_all_raindrops():
+                    collection_dir = os.path.join(
+                        os.path.realpath(config['target_dir']),
+                        find_valid_filename(collection.title)
+                    )
+                    os.makedirs(collection_dir, exist_ok=True)
+                    md_filename = os.path.join(
+                        collection_dir,
+                        f"{raindrop.id} - " + find_valid_filename(raindrop.title)
+                    ) + ".md"
+                    executor.submit(sync_raindrop, raindrop=raindrop, md_filename=md_filename)
+                
+        print(f"Done syncing")
+        wait(config['sync_every'] * MIN2SEC, report_every_in_sec=1)
 
-
-if __name__ == "__main__":
-    configure_logger()
-    main()
+        
+if __name__ == '__main__':
+    args = parser.parse_args()
+    with open(args.config_filename, 'r') as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+    
+    main(config)
