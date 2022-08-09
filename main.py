@@ -83,38 +83,38 @@ def sync_raindrop(raindrop, md_filename: str) -> None:
             f.write("### Highlights\n")
 
     else:
-        original_file = md_filename
-        temp_file = f"{md_filename}.temp"
-        with open(original_file, "r", encoding="utf-8") as f_orig:
-            with open(temp_file, 'w', encoding="utf-8") as f_temp:
-                for line in f_orig.readlines():
-                    if line.startswith('last_update:'):
-                        note_last_update = line.split(": ")[-1].strip()
-                        line = line.replace(note_last_update, raindrop.last_update)
-                    f_temp.write(line)
-        
-        while True:
+        # Check when is the last time the note updated
+        with open(md_filename, 'r', encoding="utf-8") as f:
+            lines = f.readlines()
             try:
-                os.replace(temp_file, original_file)
-                break
+                last_update_line_num = list(filter(lambda item: item[1].startswith('last_update'), enumerate(lines)))[0][0]
+                last_update_line = lines[last_update_line_num]
+                note_last_update = last_update_line.split(": ")[-1].strip()
+                lines[last_update_line_num] = lines[last_update_line_num].replace(note_last_update, raindrop.last_update)
             except:
-                continue
-               
-    with open(md_filename, 'a', encoding='utf-8') as f:
-        for highlight in raindrop.highlights:
-            if date_time_to_int(highlight.created) <= date_time_to_int(note_last_update):
-                # Highlight was already synced earlier
-                continue
+                raise Exception(f"Unable to find last_update field of raindrop {raindrop.title}")
+        
+        if note_last_update != raindrop.last_update:
+            # Update last update
+            with open(md_filename, 'w', encoding="utf-8") as f:
+                f.writelines(lines)
+            
+    new_highlights = list(filter(
+        lambda highlight: date_time_to_int(highlight.created) > date_time_to_int(note_last_update),
+        raindrop.highlights
+    ))
+    if len(new_highlights) > 0:
+        with open(md_filename, 'a', encoding='utf-8') as f:
+            for highlight in new_highlights:
+                f.write(f"---\n")
+                f.write(f"Created: {highlight.created}\n")
+                f.write(f"> [!highlight-{highlight.color}]\n")
+                highlight_text = highlight.text.replace('\n', '\n> ')
+                f.write(f"> {highlight_text}\n\n")
 
-            f.write(f"---\n")
-            f.write(f"Created: {highlight.created}\n")
-            f.write(f"> [!highlight-{highlight.color}]\n")
-            highlight_text = highlight.text.replace('\n', '\n> ')
-            f.write(f"> {highlight_text}\n\n")
-
-            if highlight.note != '':
-                f.write(f"> [!note]\n")
-                f.write(f"> {highlight.note}\n\n")
+                if highlight.note != '':
+                    f.write(f"> [!note]\n")
+                    f.write(f"> {highlight.note}\n\n")
 
 
 def find_valid_filename(orig, sep: str="-"):
