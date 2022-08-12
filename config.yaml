@@ -9,6 +9,12 @@ collections:
 # Path to target directory. Note that a subdirectory will be created of each collection
 target_dir: YOUR_TARGET_DIR_HERE
 
+# Template to use for printing a raindrop to markdown file
+raindrop_template: templates/raindrop_template.txt
+
+# Template to use for printing a new highlight to markdown file
+highlight_template: templates/highlight_template.txt
+
 # How often to sync highlights [Minutes]
 sync_every: 5
 

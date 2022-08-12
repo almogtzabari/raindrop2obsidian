@@ -6,6 +6,7 @@ import concurrent.futures
 import datetime
 import logging
 import pyraindropio
+import re
 
 
 MIN2SEC = 60
@@ -59,28 +60,22 @@ def wait(total_time_in_sec, report_every_in_sec: int=5):
         time.sleep(report_every_in_sec)
     
 
-def sync_raindrop(raindrop, md_filename: str) -> None:
+def sync_raindrop(raindrop, md_filename: str, raindrop_template: list[str], highlight_template: list[str]) -> None:
     note_last_update = None
     if not os.path.isfile(md_filename):
         note_last_update = '2000-01-01T00:00:00.000Z'
+        raindrop_lines = []
+        for line in raindrop_template:
+            new_line = line
+            for token in re.findall(r'\{(.*?)\}',line):
+                try:
+                    new_line = new_line.replace("{" + token + "}", str(eval(token)))
+                except Exception as e:
+                    continue
+            raindrop_lines.append(new_line)
+        
         with open(md_filename, "w", encoding="utf-8") as f:
-            f.write("---\n")
-            f.write(f'category: "raindrop_article"\n')
-            f.write(f'collection_id: "{raindrop.collection["$id"]}"\n')
-            f.write(f'raindrop_id: "{raindrop.id}"\n')
-            f.write(f'title: "{raindrop.title}"\n')
-            f.write(f'link: "{raindrop.link})"\n')
-            f.write(f'tags: "{", ".join(raindrop.tags)}"\n')
-            f.write(f'created: "{raindrop.created}"\n')
-            f.write(f'last_update: "{raindrop.last_update}"\n\n')
-            f.write("---\n\n")
-            f.write(f"%%\n")
-            f.write(f"up:: [[+Highlights]]\n")
-            f.write(f"%%\n\n")
-            f.write(f'![]({raindrop.cover})\n')
-            f.write(f"# {raindrop.title} [{raindrop.domain}]({raindrop.link})\n")
-
-            f.write("### Highlights\n")
+            f.writelines(raindrop_lines)
 
     else:
         # Check when is the last time the note updated
@@ -104,17 +99,19 @@ def sync_raindrop(raindrop, md_filename: str) -> None:
         raindrop.highlights
     ))
     if len(new_highlights) > 0:
+        highlights_lines = []
+        for highlight in new_highlights:
+            for line in highlight_template:
+                new_line = line
+                for token in re.findall(r'\{(.*?)\}',line):
+                    try:
+                        new_line = new_line.replace("{" + token + "}", str(eval(token)))
+                    except Exception as e:
+                        continue
+                highlights_lines.append(new_line)
+        
         with open(md_filename, 'a', encoding='utf-8') as f:
-            for highlight in new_highlights:
-                f.write(f"---\n")
-                f.write(f"Created: {highlight.created}\n")
-                f.write(f"> [!highlight-{highlight.color}]\n")
-                highlight_text = highlight.text.replace('\n', '\n> ')
-                f.write(f"> {highlight_text}\n\n")
-
-                if highlight.note != '':
-                    f.write(f"> [!note]\n")
-                    f.write(f"> {highlight.note}\n\n")
+            f.writelines(highlights_lines)
 
 
 def find_valid_filename(orig, sep: str="-"):
@@ -145,7 +142,6 @@ def slugify(value, allow_unicode=False):
     underscores, or hyphens. Convert to lowercase. Also strip leading and
     trailing whitespace, dashes, and underscores.
     """
-    import re
     value = fix_problematic_strings(value, allow_unicode=allow_unicode)
     value = re.sub(r"[^\w\s-]", "", value.lower())
     return re.sub(r"[-\s]+", "-", value).strip("-_")
@@ -159,6 +155,13 @@ def main(args):
     logger.debug(f'Config loaded successfully!')
     logger.info(f"'{config['target_dir']}' will be used as target directory")
     os.makedirs(config['target_dir'], exist_ok=True)
+    
+    with open(config['raindrop_template'], 'r') as template:
+        raindrop_template = template.readlines()
+
+    with open(config['highlight_template'], 'r') as template:
+        highlight_template = template.readlines()
+
     access_token = config['access_token']
     max_threads = config['max_threads']
     session = pyraindropio.Session(access_token=access_token, max_threads=max_threads)
@@ -177,7 +180,13 @@ def main(args):
                         collection_dir,
                         f"{raindrop.id} - " + find_valid_filename(raindrop.title)
                     ) + ".md"
-                    executor.submit(sync_raindrop, raindrop=raindrop, md_filename=md_filename)
+                    executor.submit(
+                        sync_raindrop,
+                        raindrop=raindrop,
+                        md_filename=md_filename,
+                        raindrop_template=raindrop_template,
+                        highlight_template=highlight_template
+                    )
                 
         logger.info(f"Done syncing")
         logger.info(f"Syncing again in {config['sync_every']} minutes")

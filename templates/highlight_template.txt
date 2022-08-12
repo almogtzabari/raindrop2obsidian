@@ -1,0 +1,8 @@
+---
+
+Created: {highlight.created}
+> [!highlight-{highlight.color}]
+> {highlight.text.replace('\n', '\n> ')}
+
+{"> [!note]\n> " if highlight.note != "" else ""}
+{highlight.note}

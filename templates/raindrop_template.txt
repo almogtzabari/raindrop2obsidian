@@ -1,0 +1,17 @@
+---
+category: "raindrop_article"
+collection_id: "{raindrop.collection["$id"]}"
+raindrop_id: "{raindrop.id}"
+title: "{raindrop.title}"
+link: "{raindrop.link})"
+tags: "{", ".join(raindrop.tags)}"
+created: "{raindrop.created}"
+last_update: "{raindrop.last_update}"
+---
+%%
+up:: [[+Highlights]]         
+%%
+
+![]({raindrop.cover})
+# {raindrop.title} [{raindrop.domain}]({raindrop.link})
+
