@@ -1,0 +1,6 @@
+charset-normalizer==2.1.0
+idna==3.3
+-e git+https://github.com/almogtzabari/PyRaindropIO.git@aa4c3a22d1149b2ab0dc7f4019dda5e9fa484ae4#egg=pyraindropio
+PyYAML==6.0
+requests==2.28.1
+urllib3==1.26.11
